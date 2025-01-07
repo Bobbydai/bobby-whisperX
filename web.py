@@ -54,10 +54,10 @@ def transcribe_audio():
         audio = whisperx.load_audio(audio_file_path)
         result = model.transcribe(audio, batch_size=16)
         language = result["language"]
-        print(result["segments"])  
+        print(result["segments"])
         # 对齐whisper输出
-        if model_a is None or metadata is None:
-            load_align_model(language_code=result["language"])
+        if model_a is None or metadata is None or metadata["language"] != language:
+            load_align_model(language_code=language)
         result = whisperx.align(
             result["segments"],
             model_a,
@@ -85,7 +85,11 @@ def transcribe_audio():
             )
 
         # 构建响应
-        response = {"language": language, "segments": segments, "word_segments": result["word_segments"]}
+        response = {
+            "language": language,
+            "segments": segments,
+            "word_segments": result["word_segments"],
+        }
 
         # 释放显存
         # del model
@@ -98,12 +102,12 @@ def transcribe_audio():
 
         return jsonify(response), 200
 
-
     except Exception as e:
         # 删除临时文件
         if os.path.exists(audio_file_path):
             os.remove(audio_file_path)
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/transcribe_basic", methods=["POST"])
 def transcribe_audio_basic():
@@ -150,7 +154,7 @@ def transcribe_audio_basic():
         if os.path.exists(audio_file_path):
             os.remove(audio_file_path)
         return jsonify({"error": str(e)}), 500
-    
-    
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
