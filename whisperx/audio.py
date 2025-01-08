@@ -21,15 +21,15 @@ N_SAMPLES_PER_TOKEN = HOP_LENGTH * 2  # the initial convolutions has stride 2
 FRAMES_PER_SECOND = exact_div(SAMPLE_RATE, HOP_LENGTH)  # 10ms per audio frame
 TOKENS_PER_SECOND = exact_div(SAMPLE_RATE, N_SAMPLES_PER_TOKEN)  # 20ms per audio token
 
-
-def load_audio(file: str, sr: int = SAMPLE_RATE) -> np.ndarray:
+#改成直接使用ffmpeg的stdin功能读取音频数据
+def load_audio(file_obj: str, sr: int = SAMPLE_RATE) -> np.ndarray:
     """
     Open an audio file and read as mono waveform, resampling as necessary
 
     Parameters
     ----------
-    file: str
-        The audio file to open
+    file_obj: file-like object
+        The audio file object to open
 
     sr: int
         The sample rate to resample the audio if necessary
@@ -47,7 +47,7 @@ def load_audio(file: str, sr: int = SAMPLE_RATE) -> np.ndarray:
             "-threads",
             "0",
             "-i",
-            file,
+            "pipe:0",  # 从 stdin 读取
             "-f",
             "s16le",
             "-ac",
@@ -58,7 +58,7 @@ def load_audio(file: str, sr: int = SAMPLE_RATE) -> np.ndarray:
             str(sr),
             "-",
         ]
-        out = subprocess.run(cmd, capture_output=True, check=True).stdout
+        out = subprocess.run(cmd, input=file_obj.read(), capture_output=True, check=True).stdout
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to load audio: {e.stderr.decode()}") from e
 

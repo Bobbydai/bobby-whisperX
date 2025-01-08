@@ -1,3 +1,4 @@
+import io
 from flask import Flask, request, jsonify
 import whisperx
 import gc
@@ -29,12 +30,8 @@ diarize_model = whisperx.DiarizationPipeline(
     device=device,
 )
 
-# 确保 tmp 目录存在
-tmp_dir = os.path.join(os.getcwd(), "tmp")
-if not os.path.exists(tmp_dir):
-    os.makedirs(tmp_dir)
 
-
+# 语音转文字+对齐+获取对话人
 @app.route("/transcribe", methods=["POST"])
 def transcribe_audio():
     if "audio" not in request.files:
@@ -42,19 +39,13 @@ def transcribe_audio():
 
     audio_file = request.files["audio"]
 
-    # 构建临时文件路径
-    with tempfile.NamedTemporaryFile(
-        delete=False, suffix=".wav", dir=tmp_dir
-    ) as temp_audio_file:
-        audio_file_path = temp_audio_file.name
-        audio_file.save(audio_file_path)
-
     try:
-        # 分批用原始whisper转录
-        audio = whisperx.load_audio(audio_file_path)
+        # 使用 io.BytesIO 直接加载音频文件
+        audio_file_bytes = io.BytesIO(audio_file.read())
+        audio = whisperx.audio.load_audio(audio_file_bytes)
         result = model.transcribe(audio, batch_size=16)
         language = result["language"]
-        print(result["segments"])
+
         # 对齐whisper输出
         if model_a is None or metadata is None or metadata["language"] != language:
             load_align_model(language_code=language)
@@ -69,8 +60,9 @@ def transcribe_audio():
 
         # 指定扬声器标签
         diarize_segments = diarize_model(audio)
+        
+        # 让段落带上speakerid
         result = whisperx.assign_word_speakers(diarize_segments, result)
-        # 段落现在已经带上了speakerid
 
         # 提取所需字段
         segments = []
@@ -91,46 +83,27 @@ def transcribe_audio():
             "word_segments": result["word_segments"],
         }
 
-        # 释放显存
-        # del model
-        # del model_a
-        # gc.collect()
-        # torch.cuda.empty_cache()
-
-        # 删除临时文件
-        os.remove(audio_file_path)
-
         return jsonify(response), 200
 
     except Exception as e:
-        # 删除临时文件
-        if os.path.exists(audio_file_path):
-            os.remove(audio_file_path)
         return jsonify({"error": str(e)}), 500
 
-
-@app.route("/transcribe_basic", methods=["POST"])
+# 语音转文字
+@app.route("/stt", methods=["POST"])
 def transcribe_audio_basic():
     if "audio" not in request.files:
-        return jsonify({"error": "No audio file provided"}), 400
+        return jsonify({"error": "未提供音频文件"}), 400
 
     audio_file = request.files["audio"]
 
-    # 构建临时文件路径
-    with tempfile.NamedTemporaryFile(
-        delete=False, suffix=".wav", dir=tmp_dir
-    ) as temp_audio_file:
-        audio_file_path = temp_audio_file.name
-        audio_file.save(audio_file_path)
-
     try:
-        # 分批用原始whisper转录
-        audio = whisperx.load_audio(audio_file_path)
+        # 直接从内存加载音频文件
+        audio_file_bytes = io.BytesIO(audio_file.read())
+        audio = whisperx.audio.load_audio(audio_file_bytes)
         result = model.transcribe(audio, batch_size=16)
         language = result["language"]
-        print(result["segments"])  # 对齐前
 
-        # 提取所需字段
+        # 提取字段
         segments = []
         for segment in result["segments"]:
             segments.append(
@@ -141,18 +114,11 @@ def transcribe_audio_basic():
                 }
             )
 
-        # 构建响应
         response = {"language": language, "segments": segments}
-
-        # 删除临时文件
-        os.remove(audio_file_path)
 
         return jsonify(response), 200
 
     except Exception as e:
-        # 删除临时文件
-        if os.path.exists(audio_file_path):
-            os.remove(audio_file_path)
         return jsonify({"error": str(e)}), 500
 
 
