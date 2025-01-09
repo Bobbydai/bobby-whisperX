@@ -99,7 +99,7 @@ def transcribe_audio_basic():
         audio_data = request.get_data()
 
         if not audio_data:
-            return jsonify({"error": "未提供音频数据"}), 400
+            return jsonify({"error": "未提供音频数据"}), 500
 
         # 将 PCM 数据转换为 NumPy 数组
         np_pcm = np.frombuffer(audio_data, np.int16).flatten().astype(np.float32) / 32768.0
@@ -108,7 +108,7 @@ def transcribe_audio_basic():
     #否则直接处理音频文件
     else:
         if "audio" not in request.files:
-            return jsonify({"error": "未提供音频文件"}), 400
+            return jsonify({"error": "未提供音频文件"}), 500
 
         audio_file = request.files["audio"]
         audio_file_bytes = io.BytesIO(audio_file.read())
@@ -119,18 +119,10 @@ def transcribe_audio_basic():
         result = model.transcribe(audio, batch_size=16)
         language = result["language"]
 
-        # 提取字段
-        segments = []
-        for segment in result["segments"]:
-            segments.append(
-                {
-                    "start": segment["start"],
-                    "end": segment["end"],
-                    "text": segment["text"],
-                }
-            )
+        # 合并所有 segment 中的 text
+        full_text = "".join(segment["text"] for segment in result["segments"])
 
-        response = {"language": language, "segments": segments}
+        response = {"language": language, "text": full_text}
 
         return jsonify(response), 200
 
